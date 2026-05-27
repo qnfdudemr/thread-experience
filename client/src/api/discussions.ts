@@ -7,7 +7,7 @@ import type {
 } from '../types';
 
 export const discussionsApi = {
-  listByGroup: (groupId: string, params?: { authorId?: string; participantId?: string }) =>
+  listByGroup: (groupId: string, params?: { authorId?: string; participantId?: string; bookTitle?: string }) =>
     apiClient.get<Discussion[]>(`/groups/${groupId}/discussions`, { params }),
 
   create: (groupId: string, data: CreateDiscussionRequest) => {
@@ -20,6 +20,8 @@ export const discussionsApi = {
     if (data.content) formData.append('content', data.content);
     if (data.memoId) formData.append('memoId', data.memoId);
     if (data.endDate) formData.append('endDate', data.endDate);
+    if (data.bookTitle) formData.append('bookTitle', data.bookTitle);
+    if (data.bookCoverUrl) formData.append('bookCoverUrl', data.bookCoverUrl);
     formData.append('image', data.image);
     return apiClient.post<Discussion>(`/groups/${groupId}/discussions`, formData);
   },

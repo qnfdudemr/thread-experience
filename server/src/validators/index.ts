@@ -73,6 +73,7 @@ export const UpdateMemoSchema = z.object({
 export const CreateDiscussionSchema = z.object({
   title: z.string().min(1, '토론 주제를 입력해주세요'),
   content: z.string().optional(),
+  bookTitle: z.string().trim().max(255, '책 제목은 255자 이하여야 합니다').optional(),
   memoId: z.string().uuid().optional(),
   endDate: z.string().optional(),
 });

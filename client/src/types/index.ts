@@ -125,6 +125,7 @@ export interface Discussion {
   memoId?: string;
   title: string;
   content?: string;
+  bookTitle?: string;
   imageUrl?: string;
   isRecommended: boolean;
   isPinned?: boolean;
@@ -139,6 +140,8 @@ export interface CreateDiscussionRequest {
   memoId?: string;
   endDate?: string;
   image?: File;
+  bookTitle?: string;
+  bookCoverUrl?: string;
 }
 
 export interface Comment {

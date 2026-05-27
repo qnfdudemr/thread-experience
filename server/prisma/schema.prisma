@@ -139,6 +139,7 @@ model Discussion {
   memoId        String?   @map("memo_id")
   title         String    @db.VarChar(200)
   content       String?   @db.Text
+  bookTitle     String?   @map("book_title") @db.VarChar(255)
   imageUrl      String?   @map("image_url") @db.Text
   isRecommended Boolean   @default(false) @map("is_recommended")
   isPinned      Boolean   @default(false) @map("is_pinned")

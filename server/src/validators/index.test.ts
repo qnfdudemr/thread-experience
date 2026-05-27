@@ -201,6 +201,15 @@ describe('CreateDiscussionSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('책 제목 연결 포함 시에도 통과시킨다', () => {
+    const result = CreateDiscussionSchema.safeParse({
+      title: '토론 주제',
+      content: '상세 내용',
+      bookTitle: '소년이 온다',
+    });
+    expect(result.success).toBe(true);
+  });
+
   it('빈 제목을 거부한다', () => {
     const result = CreateDiscussionSchema.safeParse({ title: '' });
     expect(result.success).toBe(false);

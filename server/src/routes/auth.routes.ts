@@ -135,6 +135,31 @@ router.post('/refresh', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/auth/demo - 전시회 데모용 자동 계정 생성 + 로그인
+router.post('/demo', async (req: Request, res: Response) => {
+  try {
+    const nickname = req.body?.nickname?.trim();
+    if (!nickname) {
+      res.status(400).json({
+        error: { code: 'VALIDATION_ERROR', message: '닉네임을 입력해주세요' },
+      });
+      return;
+    }
+    const result = await authService.demoLogin(nickname);
+    res.json(result);
+  } catch (err) {
+    if (err instanceof AppError) {
+      res.status(err.statusCode).json({
+        error: { code: err.code, message: err.message },
+      });
+      return;
+    }
+    res.status(500).json({
+      error: { code: 'INTERNAL_ERROR', message: '서버 오류가 발생했습니다' },
+    });
+  }
+});
+
 // GET /api/auth/kakao - 카카오 로그인 페이지로 리다이렉트
 router.get('/kakao', (_req: Request, res: Response) => {
   const kakaoClientId = process.env.KAKAO_CLIENT_ID;

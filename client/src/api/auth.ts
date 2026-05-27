@@ -8,6 +8,9 @@ export const authApi = {
   login: (data: LoginRequest) =>
     apiClient.post<AuthTokens>('/auth/login', data),
 
+  demo: (nickname: string) =>
+    apiClient.post<AuthTokens & { nickname: string; groupId: string | null; discussionId: string | null }>('/auth/demo', { nickname }),
+
   refresh: (refreshToken: string) =>
     apiClient.post<{ accessToken: string }>('/auth/refresh', { refreshToken }),
 

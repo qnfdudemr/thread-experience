@@ -1,19 +1,12 @@
 import { useState, useEffect, type FormEvent } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { discussionsApi } from '../api/discussions';
-import { memosApi } from '../api/memos';
-import { groupsApi } from '../api/groups';
+import { booksApi } from '../api/books';
 import { aiApi, type AiTopic } from '../api/ai';
 import { showToast } from '../api/client';
 import { useAuthStore } from '../stores/authStore';
-import type { Discussion, Memo, RecommendedTopic, ApiError, GroupDetail } from '../types';
+import type { Discussion, BookSearchResult, RecommendedTopic, ApiError } from '../types';
 import { AxiosError } from 'axios';
-import { getReadingPeriodWriteBlockMessage, isOutsideReadingPeriod } from '../utils/readingPeriod';
-import PageHeader from '../components/PageHeader';
-
-const MAX_THREAD_IMAGE_SIZE = 5 * 1024 * 1024;
-const ALLOWED_THREAD_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-const THREAD_IMAGE_HELP_TEXT = '제한 용량: 5MB 지원 형식: JPG, PNG, GIF, WEBP';
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
@@ -157,6 +150,33 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 8,
     marginBottom: 12,
   },
+  searchBar: {
+    display: 'flex',
+    gap: 8,
+    marginBottom: 16,
+  },
+  searchButton: {
+    padding: '10px 18px',
+    backgroundColor: '#4E342E',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 6,
+    fontSize: 14,
+    fontWeight: 600,
+    cursor: 'pointer',
+    whiteSpace: 'nowrap' as const,
+  },
+  clearButton: {
+    padding: '10px 14px',
+    backgroundColor: '#fff',
+    color: '#8B7355',
+    border: '1px solid #E8DFD3',
+    borderRadius: 6,
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: 'pointer',
+    whiteSpace: 'nowrap' as const,
+  },
   filterBtn: {
     padding: '6px 14px',
     fontSize: 13,
@@ -228,6 +248,49 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#718096',
     lineHeight: 1,
   },
+  guideOverlay: {
+    position: 'fixed' as const,
+    inset: 0,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1100,
+    padding: 16,
+  },
+  guideModal: {
+    width: '100%',
+    maxWidth: 440,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 24,
+    boxShadow: '0 20px 60px rgba(0,0,0,0.18)',
+    border: '1px solid #E8DFD3',
+  },
+  guideTitle: {
+    fontSize: 20,
+    fontWeight: 800,
+    color: '#3D2E1E',
+    marginBottom: 12,
+  },
+  guideList: {
+    margin: '0 0 20px',
+    paddingLeft: 20,
+    color: '#5C4A32',
+    fontSize: 14,
+    lineHeight: 1.8,
+  },
+  guideButton: {
+    width: '100%',
+    padding: '12px 0',
+    backgroundColor: '#4E342E',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 8,
+    fontSize: 15,
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
   createBtn: {
     padding: '10px 20px',
     backgroundColor: '#4E342E',
@@ -237,6 +300,18 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
     fontWeight: 600,
     cursor: 'pointer',
+  },
+  helpBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: '50%',
+    border: '1px solid #E8DFD3',
+    backgroundColor: '#FFF8E7',
+    color: '#5C4A32',
+    fontSize: 18,
+    fontWeight: 800,
+    cursor: 'pointer',
+    lineHeight: 1,
   },
   headerRow: {
     display: 'flex',
@@ -274,36 +349,27 @@ function DiscussionsPage() {
   const [recommendations, setRecommendations] = useState<RecommendedTopic[]>([]);
   const [aiTopics, setAiTopics] = useState<AiTopic[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
-  const [myMemos, setMyMemos] = useState<Memo[]>([]);
-  const [groupInfo, setGroupInfo] = useState<GroupDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [filterMode, setFilterMode] = useState<'all' | 'authored' | 'participated'>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [threadTab, setThreadTab] = useState<'active' | 'closed'>('active');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'popular'>('newest');
-  const [closedSortBy, setClosedSortBy] = useState<'newest' | 'oldest' | 'popular'>('popular');
   const [activePage, setActivePage] = useState(1);
-  const [closedPage, setClosedPage] = useState(1);
+  const [bookTitleSearch, setBookTitleSearch] = useState('');
+  const [appliedBookTitleSearch, setAppliedBookTitleSearch] = useState('');
+  const [showDemoGuide, setShowDemoGuide] = useState(false);
   const PAGE_SIZE = 5;
 
   // Form state
   const [formTitle, setFormTitle] = useState('');
   const [formContent, setFormContent] = useState('');
-  const [formMemoId, setFormMemoId] = useState('');
-  const [formEndDate, setFormEndDate] = useState('');
-  const [formImage, setFormImage] = useState<File | null>(null);
-  const [formImagePreview, setFormImagePreview] = useState('');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [serverError, setServerError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // 유사 스레드
-  const [similarThreads, setSimilarThreads] = useState<any[]>([]);
-  const [similarLoading, setSimilarLoading] = useState(false);
-  const [similarSearched, setSimilarSearched] = useState(false);
-
-  // 일일 생성 횟수
-  const [remainingCount, setRemainingCount] = useState<{ used: number; remaining: number; limit: number } | null>(null);
+  // 책 검색
+  const [bookQuery, setBookQuery] = useState('');
+  const [bookResults, setBookResults] = useState<BookSearchResult[]>([]);
+  const [selectedBook, setSelectedBook] = useState<BookSearchResult | null>(null);
+  const [bookSearching, setBookSearching] = useState(false);
 
   // 수정 상태
   const [editingDiscussion, setEditingDiscussion] = useState<Discussion | null>(null);
@@ -311,8 +377,6 @@ function DiscussionsPage() {
   const [editContent, setEditContent] = useState('');
   const [editEndDate, setEditEndDate] = useState('');
   const [editSaving, setEditSaving] = useState(false);
-  const isReadOnly = isOutsideReadingPeriod(groupInfo?.readingStartDate, groupInfo?.readingEndDate);
-  const readOnlyMessage = getReadingPeriodWriteBlockMessage(groupInfo?.readingStartDate, groupInfo?.readingEndDate);
 
   let currentUserId = user?.id || '';
   if (!currentUserId && accessToken) {
@@ -324,29 +388,16 @@ function DiscussionsPage() {
     } catch { /* ignore */ }
   }
 
-  const fetchData = async () => {
+  const fetchData = async (bookTitle = appliedBookTitleSearch) => {
     if (!groupId) return;
     setLoading(true);
     try {
-      const params: any = {};
-      if (filterMode === 'authored' && currentUserId) params.authorId = currentUserId;
-      if (filterMode === 'participated' && currentUserId) params.participantId = currentUserId;
-      const [discRes, recRes, memoRes, groupRes] = await Promise.all([
-        discussionsApi.listByGroup(groupId!, params),
+      const [discRes, recRes] = await Promise.all([
+        discussionsApi.listByGroup(groupId!, bookTitle.trim() ? { bookTitle: bookTitle.trim() } : undefined),
         discussionsApi.getRecommendations(groupId!).catch(() => ({ data: [] as RecommendedTopic[] })),
-        memosApi.listByGroup(groupId!).catch(() => ({ data: { myMemos: [] as Memo[], publicMemos: [] as Memo[] } })),
-        groupsApi.getDetail(groupId!).catch(() => ({ data: null })),
       ]);
       setDiscussions(discRes.data);
       setRecommendations(recRes.data);
-      setMyMemos(memoRes.data.myMemos || []);
-      setGroupInfo(groupRes.data);
-
-      if (currentUserId) {
-        // 남은 생성 횟수 조회
-        const remRes = await discussionsApi.getRemainingCount(groupId!).catch(() => ({ data: null }));
-        if (remRes.data) setRemainingCount(remRes.data);
-      }
     } catch {
       setDiscussions([]);
     } finally {
@@ -356,7 +407,33 @@ function DiscussionsPage() {
 
   useEffect(() => {
     fetchData();
-  }, [groupId, filterMode]);
+  }, [groupId]);
+
+  useEffect(() => {
+    if (sessionStorage.getItem('showDemoThreadGuide') === 'true') {
+      setShowDemoGuide(true);
+      sessionStorage.removeItem('showDemoThreadGuide');
+    }
+  }, []);
+
+  const closeDemoGuide = () => {
+    setShowDemoGuide(false);
+  };
+
+  const handleBookTitleSearch = (e: FormEvent) => {
+    e.preventDefault();
+    const query = bookTitleSearch.trim();
+    setAppliedBookTitleSearch(query);
+    setActivePage(1);
+    fetchData(query);
+  };
+
+  const clearBookTitleSearch = () => {
+    setBookTitleSearch('');
+    setAppliedBookTitleSearch('');
+    setActivePage(1);
+    fetchData('');
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -368,19 +445,16 @@ function DiscussionsPage() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [showCreateModal]);
 
-  const handleFindSimilar = async () => {
-    if (!groupId || !formTitle.trim()) return;
-    setSimilarLoading(true);
-    setSimilarThreads([]);
-    setSimilarSearched(false);
+  const handleBookSearch = async () => {
+    if (!bookQuery.trim()) return;
+    setBookSearching(true);
     try {
-      const res = await discussionsApi.findSimilar(groupId, formTitle.trim(), formContent.trim());
-      setSimilarThreads(res.data || []);
+      const { data } = await booksApi.search(bookQuery.trim());
+      setBookResults(data);
     } catch {
-      setSimilarThreads([]);
+      setBookResults([]);
     } finally {
-      setSimilarLoading(false);
-      setSimilarSearched(true);
+      setBookSearching(false);
     }
   };
 
@@ -395,11 +469,6 @@ function DiscussionsPage() {
 
   const handleEditSubmit = async () => {
     if (!editingDiscussion || !editTitle.trim()) return;
-    if (isReadOnly) {
-      showToast(readOnlyMessage || '독서기간 중에만 수정할 수 있습니다');
-      setEditingDiscussion(null);
-      return;
-    }
     setEditSaving(true);
     try {
       await discussionsApi.updateTopic(editingDiscussion.id, {
@@ -418,19 +487,9 @@ function DiscussionsPage() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setServerError('');
-    if (isReadOnly) {
-      setServerError(readOnlyMessage || '독서기간 중에만 스레드를 만들 수 있습니다');
-      return;
-    }
     const errs: Record<string, string> = {};
     if (!formTitle.trim()) errs.title = '제목을 입력해주세요';
     if (!formContent.trim()) errs.content = '내용을 입력해주세요';
-    if (!formEndDate) errs.endDate = '종료일을 입력해주세요';
-    if (formEndDate && groupInfo?.readingEndDate) {
-      const endDate = new Date(formEndDate);
-      const readingEnd = new Date(groupInfo.readingEndDate);
-      if (endDate > readingEnd) errs.endDate = '종료일은 독서기간 종료일을 초과할 수 없습니다';
-    }
     setFormErrors(errs);
     if (Object.keys(errs).length > 0) return;
     if (!groupId) return;
@@ -440,18 +499,14 @@ function DiscussionsPage() {
       await discussionsApi.create(groupId!, {
         title: formTitle.trim(),
         content: formContent.trim(),
-        memoId: formMemoId || undefined,
-        endDate: formEndDate || undefined,
-        image: formImage || undefined,
+        bookTitle: selectedBook?.title || undefined,
+        bookCoverUrl: selectedBook?.coverImageUrl || undefined,
       });
       setFormTitle('');
       setFormContent('');
-      setFormMemoId('');
-      setFormEndDate('');
-      setSimilarThreads([]);
-      setSimilarSearched(false);
-      setFormImage(null);
-      setFormImagePreview('');
+      setSelectedBook(null);
+      setBookQuery('');
+      setBookResults([]);
       setShowCreateModal(false);
       fetchData();
     } catch (err) {
@@ -464,10 +519,6 @@ function DiscussionsPage() {
 
   const handleSelectRecommendation = async (rec: RecommendedTopic) => {
     if (!groupId) return;
-    if (isReadOnly) {
-      showToast(readOnlyMessage || '독서기간 중에만 스레드를 만들 수 있습니다');
-      return;
-    }
     try {
       await discussionsApi.create(groupId!, {
         title: rec.title,
@@ -480,10 +531,6 @@ function DiscussionsPage() {
 
   const handleAiSuggest = async () => {
     if (!groupId) return;
-    if (isReadOnly) {
-      showToast(readOnlyMessage || '독서기간 중에만 스레드를 만들 수 있습니다');
-      return;
-    }
     setAiLoading(true);
     try {
       const res = await aiApi.suggestTopics(groupId);
@@ -497,10 +544,6 @@ function DiscussionsPage() {
 
   const handleSelectAiTopic = async (topic: AiTopic) => {
     if (!groupId) return;
-    if (isReadOnly) {
-      showToast(readOnlyMessage || '독서기간 중에만 스레드를 만들 수 있습니다');
-      return;
-    }
     try {
       await discussionsApi.create(groupId, {
         title: topic.title,
@@ -518,69 +561,43 @@ function DiscussionsPage() {
     }
   };
 
-  const handleThreadImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!ALLOWED_THREAD_IMAGE_TYPES.includes(file.type)) {
-      showToast('JPG, PNG, GIF, WEBP 형식의 이미지만 사용할 수 있습니다');
-      e.target.value = '';
-      return;
-    }
-    if (file.size > MAX_THREAD_IMAGE_SIZE) {
-      showToast('스레드 이미지는 5MB 이하의 파일만 사용할 수 있습니다');
-      e.target.value = '';
-      return;
-    }
-    setFormImage(file);
-    setFormImagePreview(URL.createObjectURL(file));
-  };
-
-  const clearThreadImage = () => {
-    setFormImage(null);
-    setFormImagePreview('');
-  };
-
   return (
     <div style={styles.container}>
-      <PageHeader />
-      <Link to={`/groups/${groupId}`} style={styles.backLink}>← 모임으로</Link>
       <h1 style={styles.title}>💬 스레드</h1>
+
+      {showDemoGuide && (
+        <div style={styles.guideOverlay} onClick={closeDemoGuide}>
+          <div style={styles.guideModal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.guideTitle}>스레드 체험 방법</div>
+            <ol style={styles.guideList}>
+              <li>목록에서 관심 있는 스레드를 눌러 다른 사람의 의견을 읽어보세요.</li>
+              <li>의견 작성란에 자신의 생각을 남기세요.</li>
+              <li>새 이야기를 시작하고 싶다면 스레드 만들기를 누르세요. 제목과 내용, 책 제목을 검색해 입력하면 새로운 스레드가 만들어집니다.</li>
+              <li>책 이름 검색으로 관련 스레드를 빠르게 찾을 수 있습니다.</li>
+            </ol>
+            <button type="button" style={styles.guideButton} onClick={closeDemoGuide}>
+              시작하기
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 헤더: 스레드 만들기 버튼 */}
       <div style={styles.headerRow}>
-        <div style={styles.filterRow}>
-          <button
-            style={{ ...styles.filterBtn, ...(filterMode === 'all' ? styles.filterBtnActive : {}) }}
-            onClick={() => setFilterMode('all')}
-          >
-            전체
-          </button>
-          <button
-            style={{ ...styles.filterBtn, ...(filterMode === 'authored' ? styles.filterBtnActive : {}) }}
-            onClick={() => setFilterMode('authored')}
-          >
-            내 작성
-          </button>
-          <button
-            style={{ ...styles.filterBtn, ...(filterMode === 'participated' ? styles.filterBtnActive : {}) }}
-            onClick={() => setFilterMode('participated')}
-          >
-            내 참여
-          </button>
-        </div>
+        <div />
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button
-            style={{ ...styles.createBtn, ...(isReadOnly ? styles.buttonDisabled : {}) }}
-            disabled={isReadOnly}
+            type="button"
+            style={styles.helpBtn}
+            onClick={() => setShowDemoGuide(true)}
+            aria-label="스레드 사용 방법 보기"
+            title="스레드 사용 방법"
+          >
+            ?
+          </button>
+          <button
+            style={styles.createBtn}
             onClick={() => {
-              if (isReadOnly) {
-                showToast(readOnlyMessage || '독서기간 중에만 스레드를 만들 수 있습니다');
-                return;
-              }
-              if (remainingCount && remainingCount.remaining <= 0) {
-                showToast('오늘 생성 가능한 횟수를 초과했습니다. 내일 다시 시도해 주세요.');
-                return;
-              }
               setShowCreateModal(true);
             }}
           >
@@ -589,63 +606,31 @@ function DiscussionsPage() {
         </div>
       </div>
 
-      {/* 📌 대표 스레드 (고정) — 전체 필터에서만 표시 */}
-      {filterMode === 'all' && !loading && discussions.filter((d: any) => d.isPinned).length > 0 && (
-        <div style={{ ...styles.section, borderLeft: '4px solid #C8962E' }}>
-          <div style={styles.sectionTitle}>📌 대표 스레드</div>
-          {discussions.filter((d: any) => d.isPinned).map((d) => (
-            <div
-              key={d.id}
-              style={styles.discussionItem}
-              onClick={() => navigate(`/discussions/${d.id}`)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && navigate(`/discussions/${d.id}`)}
-            >
-              <div style={styles.discussionTitle}>
-                {d.title}
-                {(d as any).status === 'closed' && <span style={{ fontSize: 11, backgroundColor: '#fed7d7', color: '#c53030', padding: '2px 8px', borderRadius: 12, marginLeft: 8 }}>종료</span>}
-              </div>
-              {d.content && (
-                <div style={{ fontSize: 13, color: '#5C4A32', marginTop: 4, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                  {d.content}
-                </div>
-              )}
-              <div style={styles.discussionMeta}>
-                {d.authorNickname} · {(d as any).endDate && `~${new Date((d as any).endDate).toLocaleDateString()}`}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* 스레드 탭 (진행중 / 종료) */}
+      {/* 스레드 목록 */}
       <div style={styles.section}>
-        {filterMode !== 'all' && (
-          <div style={{ fontSize: 12, color: '#718096', marginBottom: 12 }}>
-            {filterMode === 'authored' ? '📝 내가 작성한 스레드만 표시됩니다' : '💬 내가 의견이나 댓글을 남긴 스레드가 표시됩니다'}
-          </div>
-        )}
-        <div style={{ display: 'flex', gap: 0, borderBottom: '2px solid #E8DFD3', marginBottom: 16 }}>
-          <button
-            style={{ padding: '8px 16px', fontSize: 14, fontWeight: threadTab === 'active' ? 600 : 400, cursor: 'pointer', border: 'none', background: 'none', color: threadTab === 'active' ? '#C8962E' : '#718096', borderBottom: threadTab === 'active' ? '2px solid #C8962E' : '2px solid transparent', marginBottom: -2 }}
-            onClick={() => { setThreadTab('active'); setActivePage(1); }}
-          >🟢 진행중</button>
-          <button
-            style={{ padding: '8px 16px', fontSize: 14, fontWeight: threadTab === 'closed' ? 600 : 400, cursor: 'pointer', border: 'none', background: 'none', color: threadTab === 'closed' ? '#e53e3e' : '#718096', borderBottom: threadTab === 'closed' ? '2px solid #e53e3e' : '2px solid transparent', marginBottom: -2 }}
-            onClick={() => { setThreadTab('closed'); setClosedPage(1); }}
-          >🔴 종료</button>
-        </div>
+        <form onSubmit={handleBookTitleSearch} style={styles.searchBar}>
+          <input
+            type="text"
+            style={styles.input}
+            value={bookTitleSearch}
+            onChange={(e) => setBookTitleSearch(e.target.value)}
+            placeholder="책 이름으로 스레드 검색"
+            aria-label="책 이름으로 스레드 검색"
+          />
+          <button type="submit" style={styles.searchButton}>검색</button>
+          {appliedBookTitleSearch && (
+            <button type="button" style={styles.clearButton} onClick={clearBookTitleSearch}>초기화</button>
+          )}
+        </form>
 
         {/* 정렬 */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
           <select
             style={{ padding: '4px 10px', fontSize: 12, border: '1px solid #ddd', borderRadius: 4 }}
-            value={threadTab === 'active' ? sortBy : closedSortBy}
+            value={sortBy}
             onChange={e => {
-              const v = e.target.value as 'newest' | 'oldest' | 'popular';
-              if (threadTab === 'active') { setSortBy(v); setActivePage(1); }
-              else { setClosedSortBy(v); setClosedPage(1); }
+              setSortBy(e.target.value as 'newest' | 'oldest' | 'popular');
+              setActivePage(1);
             }}
           >
             <option value="newest">최신순</option>
@@ -655,40 +640,45 @@ function DiscussionsPage() {
         </div>
 
         {(() => {
-          const isActive = threadTab === 'active';
-          const filtered = discussions.filter((d: any) => isActive ? d.status !== 'closed' : d.status === 'closed');
-          const currentSort = isActive ? sortBy : closedSortBy;
+          const filtered = discussions.filter((d: any) => d.status !== 'closed');
           const sorted = [...filtered].sort((a: any, b: any) => {
-            if (currentSort === 'newest') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-            if (currentSort === 'oldest') return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+            if (sortBy === 'newest') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+            if (sortBy === 'oldest') return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
             return (b.commentCount || 0) - (a.commentCount || 0);
           });
-          const currentPage = isActive ? activePage : closedPage;
           const totalPages = Math.ceil(sorted.length / PAGE_SIZE);
-          const paged = sorted.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+          const paged = sorted.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE);
 
           if (loading) return <div style={styles.emptyState}>불러오는 중...</div>;
-          if (sorted.length === 0) return <div style={styles.emptyState}>{isActive ? '진행중인 스레드가 없습니다' : '종료된 스레드가 없습니다'}</div>;
+          if (sorted.length === 0) return <div style={styles.emptyState}>아직 스레드가 없습니다. 첫 스레드를 만들어보세요!</div>;
 
           return (
             <>
               {paged.map((d: any) => (
                 <div
                   key={d.id}
-                  style={{ ...styles.discussionItem, display: 'flex', justifyContent: 'space-between', alignItems: 'center', ...(threadTab === 'closed' ? { opacity: 0.7 } : {}) }}
+                  style={{ ...styles.discussionItem, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
                 >
                   <div style={{ cursor: 'pointer', flex: 1 }} onClick={() => navigate(`/discussions/${d.id}`)}>
-                    <div style={styles.discussionTitle}>
-                      {d.title}
-                      {d.endDate && <span style={{ fontSize: 11, color: '#718096', marginLeft: 8 }}>~{new Date(d.endDate).toLocaleDateString()}</span>}
-                      {d.status === 'closed' && <span style={{ fontSize: 11, backgroundColor: '#fed7d7', color: '#c53030', padding: '2px 8px', borderRadius: 12, marginLeft: 8 }}>종료</span>}
-                      {d.commentCount > 0 && <span style={{ fontSize: 11, color: '#a0aec0', marginLeft: 8 }}>💬 {d.commentCount}</span>}
-                    </div>
-                    <div style={styles.discussionMeta}>
-                      {d.authorNickname} · {new Date(d.createdAt).toLocaleDateString()}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      {d.imageUrl && (
+                        <img src={d.imageUrl} alt="" style={{ width: 32, height: 46, objectFit: 'contain', borderRadius: 3, flexShrink: 0 }} />
+                      )}
+                      <div>
+                        <div style={styles.discussionTitle}>
+                          {d.title}
+                          {d.endDate && <span style={{ fontSize: 11, color: '#718096', marginLeft: 8 }}>~{new Date(d.endDate).toLocaleDateString()}</span>}
+                          {d.status === 'closed' && <span style={{ fontSize: 11, backgroundColor: '#fed7d7', color: '#c53030', padding: '2px 8px', borderRadius: 12, marginLeft: 8 }}>종료</span>}
+                          {d.commentCount > 0 && <span style={{ fontSize: 11, color: '#a0aec0', marginLeft: 8 }}>💬 {d.commentCount}</span>}
+                        </div>
+                        <div style={styles.discussionMeta}>
+                          {d.authorNickname} · {new Date(d.createdAt).toLocaleDateString()}
+                          {d.bookTitle && <> · 📖 {d.bookTitle}</>}
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  {isActive && d.authorId === currentUserId && !isReadOnly && (
+                  {d.authorId === currentUserId && (
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                       <button
                         onClick={(e) => { e.stopPropagation(); setEditingDiscussion(d); }}
@@ -719,8 +709,8 @@ function DiscussionsPage() {
                   {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
                     <button
                       key={p}
-                      style={{ padding: '4px 10px', fontSize: 12, border: '1px solid #ddd', borderRadius: 4, backgroundColor: p === currentPage ? '#C8962E' : '#fff', color: p === currentPage ? '#fff' : '#333', cursor: 'pointer' }}
-                      onClick={() => isActive ? setActivePage(p) : setClosedPage(p)}
+                      style={{ padding: '4px 10px', fontSize: 12, border: '1px solid #ddd', borderRadius: 4, backgroundColor: p === activePage ? '#C8962E' : '#fff', color: p === activePage ? '#fff' : '#333', cursor: 'pointer' }}
+                      onClick={() => setActivePage(p)}
                     >{p}</button>
                   ))}
                 </div>
@@ -742,11 +732,6 @@ function DiscussionsPage() {
             {/* 직접 작성 폼 */}
             <div style={{ marginBottom: 24 }}>
               <div style={{ ...styles.sectionTitle, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4E342E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>직접 작성</div>
-              {remainingCount && (
-                <div style={{ fontSize: 13, marginBottom: 12, padding: '8px 12px', borderRadius: 6, backgroundColor: remainingCount.remaining > 0 ? '#f0fff4' : '#fff5f5', color: remainingCount.remaining > 0 ? '#38a169' : '#e53e3e' }}>
-                  오늘 남은 생성 횟수: {remainingCount.remaining}/{remainingCount.limit}회
-                </div>
-              )}
               <form onSubmit={handleSubmit} noValidate>
 
                 <div style={styles.field}>
@@ -772,99 +757,72 @@ function DiscussionsPage() {
                   {formErrors.content && <div style={styles.errorText}>{formErrors.content}</div>}
                 </div>
 
-                {/* 유사 스레드 확인 */}
-                <div style={{ marginBottom: 14 }}>
-                  <button
-                    type="button"
-                    onClick={handleFindSimilar}
-                    disabled={similarLoading || !formTitle.trim()}
-                    style={{ padding: '8px 14px', backgroundColor: '#edf2f7', color: '#5C4A32', border: '1px solid #E8DFD3', borderRadius: 6, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
-                  >
-                    {similarLoading ? '검색 중...' : '🔍 유사한 스레드 확인하기'}
-                  </button>
-
-                  {similarThreads.length > 0 && (
-                    <div style={{ marginTop: 10, border: '1px solid #E8DFD3', borderRadius: 8, padding: 12, backgroundColor: '#f7fafc' }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: '#5C4A32', marginBottom: 8 }}>
-                        🔍 유사한 스레드가 {similarThreads.length}개 있습니다
-                      </div>
-                      {similarThreads.map((t: any) => (
-                        <div
-                          key={t.id}
-                          style={{ padding: '8px 0', borderBottom: '1px solid #E8DFD3', cursor: 'pointer' }}
-                          onClick={() => navigate(`/discussions/${t.id}`)}
+                {/* 책 검색 연결 */}
+                <div style={styles.field}>
+                  <label style={styles.label}>📖 책 연결 (선택)</label>
+                  {!selectedBook ? (
+                    <>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <input
+                          type="text"
+                          style={{ ...styles.input, flex: 1 }}
+                          value={bookQuery}
+                          onChange={(e) => setBookQuery(e.target.value)}
+                          placeholder="책 제목을 검색하세요"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleBookSearch();
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleBookSearch}
+                          disabled={bookSearching}
+                          style={{ padding: '8px 14px', backgroundColor: '#4E342E', color: '#fff', border: 'none', borderRadius: 4, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}
                         >
-                          <div style={{ fontSize: 14, fontWeight: 500, color: '#3D2E1E' }}>
-                            {t.title}
-                            <span style={{ marginLeft: 6, fontSize: 11, color: t.status === 'active' ? '#38a169' : '#718096' }}>
-                              {t.status === 'active' ? '진행 중' : '종료'}
-                            </span>
-                          </div>
-                          <div style={{ fontSize: 12, color: '#a0aec0', marginTop: 2 }}>
-                            {t.authorNickname} · 의견 {t.commentCount}개
-                          </div>
+                          {bookSearching ? '...' : '검색'}
+                        </button>
+                      </div>
+                      {bookResults.length > 0 && (
+                        <div style={{ maxHeight: 180, overflowY: 'auto', border: '1px solid #E8DFD3', borderRadius: 6, marginTop: 8 }}>
+                          {bookResults.map((b, i) => (
+                            <div
+                              key={i}
+                              style={{ padding: '10px 12px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}
+                              onClick={() => { setSelectedBook(b); setBookResults([]); }}
+                              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#FFF8E7')}
+                              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '')}
+                            >
+                              {b.coverImageUrl && (
+                                <img src={b.coverImageUrl} alt="" style={{ width: 32, height: 46, objectFit: 'contain', borderRadius: 2, flexShrink: 0 }} />
+                              )}
+                              <div>
+                                <div style={{ fontWeight: 600 }}>{b.title}</div>
+                                <div style={{ fontSize: 11, color: '#718096' }}>{b.author}</div>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                      <div style={{ fontSize: 12, color: '#718096', marginTop: 8 }}>
-                        유사한 스레드에 참여하거나, 그래도 새로 만들 수 있습니다.
+                      )}
+                    </>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', backgroundColor: '#FFF8E7', borderRadius: 8, border: '1px solid #E8DFD3' }}>
+                      {selectedBook.coverImageUrl && (
+                        <img src={selectedBook.coverImageUrl} alt="" style={{ width: 40, height: 56, objectFit: 'contain', borderRadius: 4, flexShrink: 0 }} />
+                      )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: '#3D2E1E' }}>{selectedBook.title}</div>
+                        <div style={{ fontSize: 12, color: '#718096' }}>{selectedBook.author}</div>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => { setSelectedBook(null); setBookQuery(''); }}
+                        style={{ background: 'none', border: 'none', color: '#C8962E', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}
+                      >변경</button>
                     </div>
                   )}
-                  {similarSearched && similarThreads.length === 0 && !similarLoading && (
-                    <div style={{ marginTop: 10, fontSize: 13, color: '#38a169' }}>
-                      ✅ 유사한 스레드가 없습니다. 새로 만들어도 좋아요!
-                    </div>
-                  )}
-                </div>
-
-                <div style={styles.field}>
-                  <label style={styles.label}>이미지 첨부 (선택)</label>
-                  <label style={styles.fileButton}>
-                    {formImage ? '다른 이미지 선택' : '이미지 선택'}
-                    <input type="file" accept="image/jpeg,image/png,image/gif,image/webp" onChange={handleThreadImageChange} style={{ display: 'none' }} />
-                  </label>
-                  <div style={styles.helpText}>{THREAD_IMAGE_HELP_TEXT}</div>
-                  {formImage && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
-                      {formImagePreview && <img src={formImagePreview} alt="" style={styles.imagePreview} />}
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 12, color: '#5C4A32', wordBreak: 'break-all' }}>{formImage.name}</div>
-                        <button type="button" onClick={clearThreadImage} style={{ ...styles.closeBtn, padding: '4px 0', fontSize: 12, color: '#e53e3e' }}>삭제</button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div style={styles.field}>
-                  <label style={styles.label}>메모 연결 (선택)</label>
-                  <select
-                    style={styles.select}
-                    value={formMemoId}
-                    onChange={(e) => setFormMemoId(e.target.value)}
-                  >
-                    <option value="">메모를 선택하세요 (선택)</option>
-                    {myMemos.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        p.{m.pageStart}~{m.pageEnd}: {m.content.slice(0, 40)}...
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div style={styles.field}>
-                  <label style={styles.label}>종료일 *</label>
-                  <input
-                    type="date"
-                    min={(() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0]; })()}
-                    max={groupInfo?.readingEndDate ? new Date(groupInfo.readingEndDate).toISOString().split('T')[0] : undefined}
-                    style={{ ...styles.input, ...(formErrors.endDate ? styles.inputError : {}) }}
-                    value={formEndDate}
-                    onChange={(e) => setFormEndDate(e.target.value)}
-                  />
-                  {groupInfo?.readingEndDate && (
-                    <div style={styles.helpText}>독서기간 종료일({new Date(groupInfo.readingEndDate).toLocaleDateString()})까지 설정 가능</div>
-                  )}
-                  {formErrors.endDate && <div style={styles.errorText}>{formErrors.endDate}</div>}
                 </div>
 
                 <button
@@ -911,7 +869,7 @@ function DiscussionsPage() {
               ))}
               {aiTopics.length === 0 && !aiLoading && (
                 <div style={styles.emptyState}>
-                  버튼을 눌러 AI가 책과 메모 기반으로 스레드 주제를 제안합니다. 원하는 주제를 클릭하면 바로 스레드로 등록됩니다.
+                  버튼을 눌러 AI가 스레드 주제를 제안합니다. 원하는 주제를 클릭하면 바로 스레드로 등록됩니다.
                 </div>
               )}
             </div>
@@ -956,13 +914,6 @@ function DiscussionsPage() {
               <div style={{ marginBottom: 14 }}>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 4 }}>내용</label>
                 <textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} style={{ ...styles.input, minHeight: 80, resize: 'vertical' as const, fontFamily: 'inherit' }} />
-              </div>
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 4 }}>종료일</label>
-                <input type="date" min={(() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0]; })()} max={groupInfo?.readingEndDate ? new Date(groupInfo.readingEndDate).toISOString().split('T')[0] : undefined} value={editEndDate} onChange={(e) => setEditEndDate(e.target.value)} style={styles.input} />
-                {groupInfo?.readingEndDate && (
-                  <div style={styles.helpText}>독서기간 종료일({new Date(groupInfo.readingEndDate).toLocaleDateString()})까지 설정 가능</div>
-                )}
               </div>
               <button onClick={handleEditSubmit} disabled={editSaving} style={styles.button}>
                 {editSaving ? '저장 중...' : '수정 완료'}

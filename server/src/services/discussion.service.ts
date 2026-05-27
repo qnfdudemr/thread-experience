@@ -75,6 +75,7 @@ export const discussionService = {
         memoId: data.memoId ?? null,
         title: data.title,
         content: data.content ?? null,
+        bookTitle: data.bookTitle ?? null,
         imageUrl: imageUrl ?? null,
         isRecommended: false,
         status: 'active',
@@ -111,7 +112,7 @@ export const discussionService = {
     };
   },
 
-  async listTopics(groupId: string, filter?: { authorId?: string; status?: string; participantId?: string }) {
+  async listTopics(groupId: string, filter?: { authorId?: string; status?: string; participantId?: string; bookTitle?: string }) {
     // 종료일 지난 active 스레드를 자동 종료 처리
     const closedThreads = await prisma.discussion.findMany({
       where: {
@@ -152,6 +153,9 @@ export const discussionService = {
         { comments: { some: { replies: { some: { authorId: filter.participantId } } } } },
       ];
     }
+    if (filter?.bookTitle?.trim()) {
+      where.bookTitle = { contains: filter.bookTitle.trim() };
+    }
 
     const discussions = await prisma.discussion.findMany({
       where,
@@ -170,6 +174,7 @@ export const discussionService = {
       memoId: d.memoId,
       title: d.title,
       content: d.content,
+      bookTitle: (d as any).bookTitle,
       imageUrl: (d as any).imageUrl,
       isRecommended: d.isRecommended,
       isPinned: (d as any).isPinned,

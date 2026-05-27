@@ -13,14 +13,16 @@ import DashboardPage from './pages/DashboardPage';
 import InvitePage from './pages/InvitePage';
 import NotificationsPage from './pages/NotificationsPage';
 import RankingPage from './pages/RankingPage';
+import DemoEntryPage from './pages/DemoEntryPage';
 
 function App() {
   return (
     <>
       <Routes>
+      <Route path="/" element={<DemoEntryPage />} />
+      <Route path="/home" element={<HomePage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
-      <Route path="/" element={<HomePage />} />
       <Route path="/groups/new" element={<CreateGroupPage />} />
       <Route path="/groups/:id" element={<GroupDetailPage />} />
       <Route path="/groups/:id/memos" element={<MemosPage />} />

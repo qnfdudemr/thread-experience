@@ -41,9 +41,10 @@ router.get('/groups/:groupId/discussions', authMiddleware, async (req: AuthReque
     const authorId = typeof req.query.authorId === 'string' ? req.query.authorId : undefined;
     const status = typeof req.query.status === 'string' ? req.query.status : undefined;
     const participantId = typeof req.query.participantId === 'string' ? req.query.participantId : undefined;
+    const bookTitle = typeof req.query.bookTitle === 'string' ? req.query.bookTitle : undefined;
     const discussions = await discussionService.listTopics(
       req.params.groupId as string,
-      { ...(authorId && { authorId }), ...(status && { status }), ...(participantId && { participantId }) },
+      { ...(authorId && { authorId }), ...(status && { status }), ...(participantId && { participantId }), ...(bookTitle && { bookTitle }) },
     );
     res.json(discussions);
   } catch (err) {
@@ -67,6 +68,7 @@ router.post('/groups/:groupId/discussions', authMiddleware, imageUpload.single('
       memoId: req.body.memoId || undefined,
       endDate: req.body.endDate || undefined,
       content: req.body.content || undefined,
+      bookTitle: req.body.bookTitle || undefined,
     };
     const parsed = CreateDiscussionSchema.safeParse(body);
     if (!parsed.success) {
@@ -79,7 +81,11 @@ router.post('/groups/:groupId/discussions', authMiddleware, imageUpload.single('
       return;
     }
 
-    const imageUrl = req.file ? await saveThreadImage(req.file) : undefined;
+    // 이미지: 파일 업로드 또는 책 커버 URL
+    const imageUrl = req.file
+      ? await saveThreadImage(req.file)
+      : (req.body.bookCoverUrl || undefined);
+
     const discussion = await discussionService.createTopic(
       req.params.groupId as string,
       req.user!.userId,

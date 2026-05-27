@@ -8,16 +8,10 @@ import { aiApi } from '../api/ai';
 import { showToast } from '../api/client';
 import { Markdown } from '../components/Markdown';
 import { InsightCard } from '../components/InsightCard';
-import PageHeader from '../components/PageHeader';
 import ReportModal from '../components/ReportModal';
 import { timeAgo } from '../utils/timeAgo';
-import { getReadingPeriodWriteBlockMessage, isOutsideReadingPeriod } from '../utils/readingPeriod';
 import type { Comment as CommentType, Discussion, ApiError } from '../types';
 import { AxiosError } from 'axios';
-
-const MAX_COMMENT_IMAGE_SIZE = 5 * 1024 * 1024;
-const ALLOWED_COMMENT_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-const COMMENT_IMAGE_HELP_TEXT = '제한 용량: 5MB 지원 형식: JPG, PNG, GIF, WEBP';
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
@@ -184,29 +178,6 @@ const styles: Record<string, React.CSSProperties> = {
     border: 'none',
     padding: 0,
   },
-  fileButton: {
-    display: 'inline-block',
-    padding: '7px 12px',
-    fontSize: 12,
-    fontWeight: 600,
-    color: '#C8962E',
-    backgroundColor: '#FFF8E7',
-    border: '1px solid #E8DFD3',
-    borderRadius: 6,
-    cursor: 'pointer',
-  },
-  helpText: {
-    color: '#718096',
-    fontSize: 12,
-    marginTop: 6,
-  },
-  imagePreview: {
-    width: 120,
-    height: 80,
-    objectFit: 'cover' as const,
-    borderRadius: 6,
-    border: '1px solid #E8DFD3',
-  },
   loading: {
     textAlign: 'center' as const,
     padding: '60px 20px',
@@ -262,8 +233,6 @@ function DiscussionThreadPage() {
   const [comments, setComments] = useState<CommentType[]>([]);
   const [loading, setLoading] = useState(true);
   const [isOwner, setIsOwner] = useState(false);
-  const [isReadOnly, setIsReadOnly] = useState(false);
-  const [readOnlyMessage, setReadOnlyMessage] = useState('');
 
   let currentUserId = user?.id || '';
   if (!currentUserId && accessToken) {
@@ -272,8 +241,6 @@ function DiscussionThreadPage() {
 
   // Comment form
   const [newComment, setNewComment] = useState('');
-  const [commentImage, setCommentImage] = useState<File | null>(null);
-  const [commentImagePreview, setCommentImagePreview] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
   const [tokenRemaining, setTokenRemaining] = useState<number | null>(null);
   const [tokenRequested, setTokenRequested] = useState(false);
@@ -323,8 +290,6 @@ function DiscussionThreadPage() {
         const groupRes = await groupsApi.getDetail(topicRes.data.groupId).catch(() => ({ data: null }));
         if (groupRes.data) {
           setIsOwner(groupRes.data.ownerId === currentUserId);
-          setIsReadOnly(isOutsideReadingPeriod(groupRes.data.readingStartDate, groupRes.data.readingEndDate));
-          setReadOnlyMessage(getReadingPeriodWriteBlockMessage(groupRes.data.readingStartDate, groupRes.data.readingEndDate));
         }
 
         // 종료된 스레드면 인사이트 불러오기
@@ -345,17 +310,11 @@ function DiscussionThreadPage() {
 
   const handleAddComment = async (e: FormEvent) => {
     e.preventDefault();
-    if (isReadOnly) {
-      showToast(readOnlyMessage || '독서기간 중에만 의견을 작성할 수 있습니다');
-      return;
-    }
     if (!newComment.trim() || !discussionId) return;
     setSubmittingComment(true);
     try {
-      await discussionsApi.addComment(discussionId, newComment.trim(), commentImage);
+      await discussionsApi.addComment(discussionId, newComment.trim());
       setNewComment('');
-      setCommentImage(null);
-      setCommentImagePreview('');
       fetchData();
     } catch (err) {
       const axiosErr = err as AxiosError<ApiError>;
@@ -368,10 +327,6 @@ function DiscussionThreadPage() {
   };
 
   const handleAddReply = async (commentId: string) => {
-    if (isReadOnly) {
-      showToast(readOnlyMessage || '독서기간 중에만 댓글을 작성할 수 있습니다');
-      return;
-    }
     if (!replyContent.trim()) return;
     setSubmittingReply(true);
     try {
@@ -390,10 +345,6 @@ function DiscussionThreadPage() {
   };
 
   const handleDeleteComment = async (commentId: string) => {
-    if (isReadOnly) {
-      showToast(readOnlyMessage || '독서기간 중에만 삭제할 수 있습니다');
-      return;
-    }
     if (!confirm('이 의견을 삭제하시겠습니까?')) return;
     try {
       await dashboardApi.deleteComment(commentId);
@@ -402,10 +353,6 @@ function DiscussionThreadPage() {
   };
 
   const handleDeleteReply = async (replyId: string) => {
-    if (isReadOnly) {
-      showToast(readOnlyMessage || '독서기간 중에만 삭제할 수 있습니다');
-      return;
-    }
     if (!confirm('이 답글을 삭제하시겠습니까?')) return;
     try {
       await dashboardApi.deleteReply(replyId);
@@ -454,36 +401,13 @@ function DiscussionThreadPage() {
     }
   };
 
-  const handleCommentImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!ALLOWED_COMMENT_IMAGE_TYPES.includes(file.type)) {
-      showToast('JPG, PNG, GIF, WEBP 형식의 이미지만 사용할 수 있습니다');
-      e.target.value = '';
-      return;
-    }
-    if (file.size > MAX_COMMENT_IMAGE_SIZE) {
-      showToast('댓글 이미지는 5MB 이하의 파일만 사용할 수 있습니다');
-      e.target.value = '';
-      return;
-    }
-    setCommentImage(file);
-    setCommentImagePreview(URL.createObjectURL(file));
-  };
-
-  const clearCommentImage = () => {
-    setCommentImage(null);
-    setCommentImagePreview('');
-  };
-
   return (
     <div style={styles.container}>
-      <PageHeader />
       <Link
         to={topic?.groupId ? `/groups/${topic.groupId}/discussions` : '/'}
         style={styles.backLink}
       >
-        ← 목록으로
+        ← 스레드 목록
       </Link>
 
       {/* Topic Header */}
@@ -493,7 +417,6 @@ function DiscussionThreadPage() {
           {topic?.isRecommended && <span style={styles.recommendedBadge}>추천</span>}
         </div>
         {topic?.content && <div style={styles.topicContent}>{topic.content}</div>}
-        {topic?.imageUrl && <img src={topic.imageUrl} alt="" style={styles.attachedImage} />}
         <div style={styles.topicMeta}>
           {topic?.authorNickname || ''} · {topic?.createdAt ? timeAgo(topic.createdAt) : ''}
           {topic && (topic as any).authorId !== currentUserId && (
@@ -570,7 +493,7 @@ function DiscussionThreadPage() {
               )}
               <div style={styles.commentMeta}>
                 {timeAgo(comment.createdAt)}
-                {!isReadOnly && (
+                {(
                   <>
                     {' · '}
                     <button
@@ -584,13 +507,13 @@ function DiscussionThreadPage() {
                     </button>
                   </>
                 )}
-                {!isReadOnly && comment.authorId === currentUserId && editingCommentId !== comment.id && (
+                {comment.authorId === currentUserId && editingCommentId !== comment.id && (
                   <>
                     {' · '}
                     <button style={styles.replyToggle} onClick={() => { setEditingCommentId(comment.id); setEditCommentContent(comment.content); }}>수정</button>
                   </>
                 )}
-                {!isReadOnly && (isOwner || comment.authorId === currentUserId) && (
+                {(isOwner || comment.authorId === currentUserId) && (
                   <>
                     {' · '}
                     <button style={{ ...styles.replyToggle, color: '#e53e3e' }} onClick={() => handleDeleteComment(comment.id)}>삭제</button>
@@ -650,13 +573,13 @@ function DiscussionThreadPage() {
                       )}
                       <div style={styles.replyMeta}>
                         {timeAgo(reply.createdAt)}
-                        {!isReadOnly && reply.authorId === currentUserId && editingReplyId !== reply.id && (
+                        {reply.authorId === currentUserId && editingReplyId !== reply.id && (
                           <>
                             {' · '}
                             <button style={{ ...styles.replyToggle, fontSize: 11 }} onClick={() => { setEditingReplyId(reply.id); setEditReplyContent(reply.content); }}>수정</button>
                           </>
                         )}
-                        {!isReadOnly && (isOwner || reply.authorId === currentUserId) && (
+                        {(isOwner || reply.authorId === currentUserId) && (
                           <>
                             {' · '}
                             <button style={{ ...styles.replyToggle, color: '#e53e3e', fontSize: 11 }} onClick={() => handleDeleteReply(reply.id)}>삭제</button>
@@ -679,11 +602,7 @@ function DiscussionThreadPage() {
       </div>
 
       {/* Add Comment */}
-      {isReadOnly ? (
-        <div style={{ ...styles.section, backgroundColor: '#FDF8F0', textAlign: 'center' as const }}>
-          <div style={{ color: '#5C4A32', fontSize: 14, fontWeight: 500 }}>{readOnlyMessage || '독서기간 중에만 작성할 수 있습니다'}</div>
-        </div>
-      ) : (topic as any)?.status === 'closed' ? (
+      {(topic as any)?.status === 'closed' ? (
         <div style={{ ...styles.section, backgroundColor: '#fff5f5', textAlign: 'center' as const }}>
           <div style={{ color: '#c53030', fontSize: 14, fontWeight: 500 }}>🔴 이 스레드는 종료되었습니다. 의견 작성이 불가능합니다.</div>
         </div>
@@ -734,22 +653,6 @@ function DiscussionThreadPage() {
                 onChange={(e) => setNewComment(e.target.value)}
                 placeholder="의견을 작성해주세요"
               />
-              <div style={{ marginTop: 8 }}>
-                <label style={styles.fileButton}>
-                  {commentImage ? '다른 이미지 선택' : '이미지 선택'}
-                  <input type="file" accept="image/jpeg,image/png,image/gif,image/webp" onChange={handleCommentImageChange} style={{ display: 'none' }} />
-                </label>
-                <div style={styles.helpText}>{COMMENT_IMAGE_HELP_TEXT}</div>
-                {commentImage && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
-                    {commentImagePreview && <img src={commentImagePreview} alt="" style={styles.imagePreview} />}
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 12, color: '#5C4A32', wordBreak: 'break-all' }}>{commentImage.name}</div>
-                      <button type="button" onClick={clearCommentImage} style={{ ...styles.replyToggle, color: '#e53e3e', marginTop: 4 }}>삭제</button>
-                    </div>
-                  </div>
-                )}
-              </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
                 <button
                   type="submit"

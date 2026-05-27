@@ -16,6 +16,9 @@ export function hasReadingPeriodEnded(readingEndDate: Date, now = new Date()): b
 }
 
 export function assertReadingPeriodOpen(readingStartDate: Date, readingEndDate: Date): void {
+  // 전시회(데모) 모드에서는 독서기간 제한 비활성화
+  if (process.env.DEMO_MODE === 'true') return;
+
   if (hasReadingPeriodNotStarted(readingStartDate)) {
     throw new AppError(403, 'READING_PERIOD_NOT_STARTED', READING_PERIOD_NOT_STARTED_MESSAGE);
   }
